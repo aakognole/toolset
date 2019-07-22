@@ -7,7 +7,7 @@
 
 sub usage {
   printf STDERR "usage:   convpdb.pl [options] [PDBfile]\n";
-  printf STDERR "options: [-center] [-translate dx dy dz] [-orient]\n";
+  printf STDERR "options: [-center] [-translate dx dy dz] [-orient] [-newcenter]\n";
   printf STDERR "         [-rotate m11 m12 m13 m21 m22 m23 m31 m32 m33]\n";
   printf STDERR "         [-rotatex phi] [-rotatey phi] [-rotatez phi]\n";
   printf STDERR "         [-biomt num] [-smtry num]\n";
@@ -62,6 +62,7 @@ my $inmode="";
 my $outmode="CHARMM22";
 my $center=0;
 my $orient=0;
+my $newcenter=0;
 my $sellist;
 my $chain;
 my $segnames;
@@ -220,6 +221,9 @@ while ($#ARGV>=0) {
   } elsif ($ARGV[0] eq "-center") {
     shift @ARGV;
     $center=1;
+  } elsif ($ARGV[0] eq "-newcenter") {
+    shift @ARGV;
+    $newcenter=1;
   } elsif ($ARGV[0] eq "-orient") {
     shift @ARGV;
     $orient=1;
@@ -578,6 +582,7 @@ if (defined $fillseq && defined $fillinx) {
 
 $mol->rotate($m11,$m12,$m13,$m21,$m22,$m23,$m31,$m32,$m33) if (defined $rotate);
 $mol->center() if ($center);
+$mol->newcenter() if ($newcenter);
 $mol->move($dx,$dy,$dz);
 $mol->orient() if ($orient);
 if (defined $nmodefile && -r $nmodefile) {

@@ -2907,6 +2907,46 @@ sub center {
   }
 }
 
+## method: newcenter()
+## translates the current structure to positive quadrant
+
+sub newcenter {
+  my $self=shift;
+  my $chain=shift;
+
+  my ($minx,$miny,$minz)=(500.0,500.0,500.0);
+  my ($dx,$dy,$dz)=(0.0,0.0,0.0);
+
+  foreach my $c ( @{$self->activeChains($chain)} ) {
+    my $atom=$c->{atom};
+
+    for (my $i=0; $i<=$#{$atom}; $i++) {
+        if ($minx>$atom->[$i]->{xcoor}) {    
+            $minx=$atom->[$i]->{xcoor};       
+        }                                    
+        if ($miny>$atom->[$i]->{ycoor}) {   
+            $miny=$atom->[$i]->{ycoor};      
+        }                                   
+        if ($minz>$atom->[$i]->{zcoor}) {   
+            $minz=$atom->[$i]->{zcoor};      
+        }                                   
+    }
+  }
+  $dx=$dx-$minx;
+  $dy=$dy-$miny;
+  $dz=$dz-$minz;
+  print "$dx $dy $dz\n";
+	
+  foreach my $c ( @{$self->activeChains($chain)} ) {
+    my $atom=$c->{atom};
+    for (my $i=0; $i<=$#{$atom}; $i++) {
+      $atom->[$i]->{xcoor}+=$dx;
+      $atom->[$i]->{ycoor}+=$dy;
+      $atom->[$i]->{zcoor}+=$dz;
+    }
+  }
+}
+
 ## method: orient()
 ## aligns principal axes to x-y-z (largest moment of interia)
 
