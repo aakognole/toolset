@@ -27,7 +27,7 @@ NONE :
 	@echo ""
 	@echo "    all"
 	@echo "    mfold mener rebuild rebprimo mchain gdt"
-	@echo "    jclust kclust spear solvate "
+	@echo "    jclust kclust spear solvate solvate_drude"
 	@echo "    reducescwrlib scwrlbinary scwrllib"
 	@echo ""
 
@@ -35,7 +35,7 @@ NONE :
 NROBJS = $(ODIR)/brent.o $(ODIR)/f1dim.o $(ODIR)/frprmn.o\
          $(ODIR)/linmin.o $(ODIR)/mnbrak.o $(ODIR)/nrutil.o 
 
-all : $(BINDIR) $(ODIR) $(DATADIR) mfold mener rebuild rebprimo mchain gdt kclust jclust spear reducescwrlib scwrlbinary scwrllib solvate;
+all : $(BINDIR) $(ODIR) $(DATADIR) mfold mener rebuild rebprimo mchain gdt kclust jclust spear reducescwrlib scwrlbinary scwrllib solvate solvate_drude;
 
 $(BINDIR):
 	mkdir -p $(BINDIR)
@@ -96,6 +96,13 @@ $(BINDIR)/solvate : solvate.c\
          $(ODIR)/field.o $(UTIL)/field.h
 	$(CXX) $(CXXFLAGS) $(CXXOPTFLAGS) $(LDFLAGS) -I$(UTIL) \
 	-o $@ solvate.c $(ODIR)/pdb.o $(ODIR)/field.o $(FORLINK) -lm
+
+solvate_drude : $(BINDIR)/solvate_drude;
+$(BINDIR)/solvate_drude : solvate_drude.c\
+	$(UTIL)/vector.h $(UTIL)/pdb.h $(ODIR)/pdb.o\
+	$(ODIR)/field.o $(UTIL)/field.h
+	$(CXX) $(CXXFLAGS) $(CXXOPTFLAGS) $(LDFLAGS) -I$(UTIL) \
+	-o $@ solvate_drude.c $(ODIR)/pdb.o $(ODIR)/field.o $(FORLINK) -lm
 
 spear : $(BINDIR)/spear;
 $(BINDIR)/spear : spear.c

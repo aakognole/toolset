@@ -18,7 +18,7 @@
 #include "pdb.h"
 
 void usage() {
- fprintf(stderr,"usage:   solvate [options] PDBfile\n");
+ fprintf(stderr,"usage:   solvate_drude [options] PDBfile\n");
  fprintf(stderr,"options: [-box PDBfile] [-boxwidth value]\n");
  fprintf(stderr,"         [-cutoff value]\n");
  fprintf(stderr,"         [-res min max] [-cubic] [-octahedron]\n");
@@ -73,7 +73,7 @@ int main(int argc, char **argv) {
 
   double solvcut=2.0;
 
-  strcpy(boxfile,"/home/akognole/modules/mmtsb_toolset/data/water.pdb");
+  strcpy(boxfile,"/home/akognole/modules/mmtsb_toolset/data/water.drude.pdb");
 
   if (argc<2) {
     usage();
