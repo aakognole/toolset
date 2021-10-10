@@ -23,10 +23,11 @@ sub usage {
   printf STDERR "         [-renumwatersegs]\n";
   printf STDERR "         [-match pdbfile]\n";
   printf STDERR "         [-setchain id] [-setseg id] [-setall]\n";
-  printf STDERR "         [-readseg] [-chainfromseg] [-splitseg]\n";
+  printf STDERR "         [-readseg] [-chainfromseg] [-splitseg] [-alternate]\n";
   printf STDERR "         [-charmm19] [-amber]\n";
   printf STDERR "         [-out charmm19 | charmm22 | amber | generic]\n";
-  printf STDERR "         [-crd] [-crdext]\n";
+  printf STDERR "         [-genres]\n";
+  printf STDERR "         [-crd] [-crdext] [-crdinp]\n";
   printf STDERR "         [-segnames]\n";
   printf STDERR "         [-fixcoo]\n";
   printf STDERR "         [-ssbond res1:res2[=res1:res2]] [-nossbond]\n";
@@ -40,6 +41,8 @@ sub usage {
   printf STDERR "         [-cleanaux]\n";
   printf STDERR "         [-setaux1 value] [-setaux2 value]\n";
   printf STDERR "         [-removeclashes] [-clashes] [-clashcut value]\n";
+  printf STDERR "         [-wrap boxx boxy boxz] [-by chain|atom|system]\n";
+  printf STDERR "         [-reimage cx cy cz]\n";
   exit 1;
 }
 
@@ -60,6 +63,7 @@ my $addres;
 my $fname="-";
 my $inmode="";
 my $outmode="CHARMM22";
+my $genresno=undef;
 my $center=0;
 my $orient=0;
 my $newcenter=0;
@@ -132,10 +136,20 @@ my $clashes=0;
 my $renumwatersegs=0;
 my $crd=0;
 my $crdext=0;
+my $crdinp=0;
+my $cifinp=0;
 my $splitseg=undef;
+my $alternate=undef;
 my $clashcut=undef;
 my $setaux1=undef;
 my $setaux2=undef;
+my $wrapby=undef;
+my $boxx=undef;
+my $boxy=undef;
+my $boxz=undef;
+my $scx=undef;
+my $scy=undef;
+my $scz=undef;
 
 while ($#ARGV>=0) {
   if ($ARGV[0] eq "-help" || $ARGV[0] eq "-h") {
@@ -161,10 +175,30 @@ while ($#ARGV>=0) {
   } elsif ($ARGV[0] eq "-splitseg") {
     shift @ARGV;
     $splitseg=1;
+  } elsif ($ARGV[0] eq "-alternate") {
+    shift @ARGV;
+    $alternate=1;
+  } elsif ($ARGV[0] eq "-genres") {
+    shift @ARGV;
+    $genresno=1;
   } elsif ($ARGV[0] eq "-chainfromseg") {
     shift @ARGV;
     $chainfromseg=1;
     $ignoreseg=0;
+  } elsif ($ARGV[0] eq "-wrap") {
+    shift @ARGV;
+    $boxx=0.0+shift @ARGV; 
+    $boxy=0.0+shift @ARGV; 
+    $boxz=0.0+shift @ARGV; 
+  } elsif ($ARGV[0] eq "-by") {
+    shift @ARGV;
+    $wrapby=shift @ARGV;
+  } elsif ($ARGV[0] eq "-reimage") {
+    shift @ARGV;
+    $scx=0.0+shift @ARGV; 
+    $scy=0.0+shift @ARGV; 
+    $scz=0.0+shift @ARGV; 
+    $wrapby="reimage";
   } elsif ($ARGV[0] eq "-nmode") {
     shift @ARGV;
     $nmodefile=shift @ARGV;
@@ -452,11 +486,18 @@ while ($#ARGV>=0) {
     shift @ARGV;
     $crd=1;
     $ignoreseg=0;
+  } elsif ($ARGV[0] eq "-crdinp") {
+    shift @ARGV;
+    $crdinp=1;
+    $ignoreseg=0;
   } elsif ($ARGV[0] eq "-crdext") {
     shift @ARGV;
     $crd=1;
     $crdext=1;
     $ignoreseg=0;
+  } elsif ($ARGV[0] eq "-cifinp") {
+    shift @ARGV;
+    $cifinp=1;
   } else {
     $fname = shift @ARGV;
   }
@@ -527,10 +568,15 @@ if (defined $nmodesampleprefix) {
 do {
 
 my $mol=Molecule::new();
+
 if ($mol2) {
   $mol->readMol2($fname);
+} elsif ($crdinp) {
+  $mol->readCRD($fname);
+} elsif ($cifinp) {
+  $mol->readCIF($fname);
 } else {
-  $mol->readPDB($fname,translate=>$inmode,ignoreseg=>$ignoreseg,splitseg=>$splitseg,
+  $mol->readPDB($fname,translate=>$inmode,ignoreseg=>$ignoreseg,splitseg=>$splitseg,alternate=>$alternate,
 		chainfromseg=>$chainfromseg,model=>$selmodel,firstmodel=>$firstmodel);
 }
 
@@ -601,12 +647,19 @@ if (defined $nmodefile && -r $nmodefile) {
   $mol->displace($nmodearr,$nmodeamplitude,$nmodeweight);
 }
 $mol->scale($scale) if (defined $scale);
+if (defined $wrapby) {
+  $boxx=$mol->{cryst}->{a} if (!defined $boxx && exists $mol->{cryst});
+  $boxy=$mol->{cryst}->{b} if (!defined $boxy && exists $mol->{cryst});
+  $boxz=$mol->{cryst}->{c} if (!defined $boxz && exists $mol->{cryst});
+
+  $mol->wrap($wrapby,$boxx,$boxy,$boxz,$scx,$scy,$scz) if (defined $boxx && defined $boxy && defined $boxz);
+}
 $mol->renumber($renumber) if (defined $renumber);
 $mol->shiftResNumber($addres)  if (defined $addres);
 $mol->generateSegNames() if (defined $segnames);
 $mol->fixCOO() if ($fixcoo);
 if (defined $solvate && $solvate) {
-  my $err=$mol->solvate($cutoff,$shape,undef,$solvcut,(!$tip4p)?0:1,(!$center)?0:undef);
+  my $err=$mol->solvate($cutoff,$shape,undef,$solvcut,(!$tip4p)?0:1,($center<=0)?0:undef,$splitseg);
   print STDERR $err;
 }
 
@@ -707,14 +760,14 @@ if ($info) {
   if (defined $nmodesampleprefix) {
     if ($nmodeamplitude>0.001 || $nmodeamplitude<-0.001 || !$skipzero) {
       $mol->writePDB(sprintf("%s.%d.pdb",$nmodesampleprefix,$nmodesampleindex++),
-		     translate=>$outmode,ssbond=>!$nossbond,dohetero=>$hetero);
+		     translate=>$outmode,ssbond=>!$nossbond,dohetero=>$hetero,genresno=>$genresno);
     }
     $nmodeamplitude+=$nmodesampledelta;
   } else {
     if ($crd) {
       $mol->writeCRD("-",translate=>$outmode,extend=>$crdext);
     } else {
-      $mol->writePDB("-",translate=>$outmode,ssbond=>!$nossbond,cleanaux=>$cleanaux,dohetero=>$hetero);
+      $mol->writePDB("-",translate=>$outmode,ssbond=>!$nossbond,cleanaux=>$cleanaux,dohetero=>$hetero,genresno=>$genresno);
     }
   }
 }

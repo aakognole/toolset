@@ -20,7 +20,7 @@ sub usage {
   printf STDERR "          [-fitl min:max[...]]\n";
   printf STDERR "          [-ref ref]\n";
   printf STDERR "          [-psf file]\n";
-  printf STDERR "          [-atoms from:to]\n";
+  printf STDERR "          [-tag value]\n";
   exit 1;
 }
 
@@ -59,9 +59,9 @@ my $multi;
 my $boxa;
 my $boxb;
 my $boxc;
+my $starttag;
 
 my $frames;
-my $atoms;
 
 my $warn=1;
 my $resnumonly=undef;
@@ -89,6 +89,9 @@ while ($#ARGV>=0) {
   } elsif ($ARGV[0] eq "-apply") {
     shift @ARGV;
     $apply=shift @ARGV;
+  } elsif ($ARGV[0] eq "-tag") {
+    shift @ARGV;
+    $starttag=shift @ARGV;
   } elsif ($ARGV[0] eq "-function") {
     shift @ARGV;
     $ffile=shift @ARGV;
@@ -221,7 +224,7 @@ $to=9999999 if ($to<0); # $nfiles+$to+1 if ($to<0);
 
 my $itot=0;
 
-&start() if (defined &start && defined $ffile);
+&start($starttag) if (defined &start && defined $ffile);
 
 foreach my $dcd ( @dcdfiles ) {
  for (my $im=$mfrom; $im<=$mto; $im++) {

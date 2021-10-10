@@ -102,6 +102,7 @@ sub new {
     die "open2 for $exec failed";
 
   printf $o2write "* title\n*\n\n";
+  printf $o2write "dimension chsize %d\n",500000;
   printf $o2write "UNBUFIO\n";
 
   $self->{handle}->{fromcharmm}=$o2read;
@@ -141,8 +142,10 @@ sub new {
 
    patch     => "",             # list of patches
    autogen   => 1,              # auto generate angles/dihedrals after patches
+   solvseg   => undef,          # segments to be loaded with water after everything else
 
    buildall  => 1,              # rebuild all missing atoms
+   hbuild    => 0,              # force hbuild 
 
    faster    => "on",           # fast energy routines (on|off)
 
@@ -1155,7 +1158,7 @@ sub setupFromPDB {
   $findChainBreaks=0 if (! defined $findChainBreaks);
 
   my $mol=Molecule::new();
-  $mol->readPDB($pdb);
+  $mol->readPDB($pdb,splitseg=>1);
   $mol->findSSBonds() if ((defined $findSS) && ($findSS));
   $mol->fixHistidine($self->{par}->{hsd},$self->{par}->{hse},$self->{par}->{hsp});
   $mol->changeResName($self->{par}->{resmod});
@@ -1334,14 +1337,21 @@ sub setupFromMolecule {
     $segmol->writePDB($fname,translate=>getConvType($self->{par}->{param}),ssbond=>0);
 
     if (!$readonly) {
-      if ($f->{name} eq "TIP3" || $f->{name} eq "TIP4" || $f->{name} eq "HOH" || $f->{name}=~/^W/) {
+      if ($f->{name} eq "TIP3" || $f->{name} eq "TIP4" || $f->{name} eq "HOH" || $f->{name}=~/^W/ || 
+          $segmol->{chain}->[0]->{res}->[0]->{name} eq "TIP3" || 
+          $segmol->{chain}->[0]->{res}->[0]->{name} eq "HOH") {
 	my $trec={};
 	$trec->{fname}=$fname;
 	$trec->{gen}="generate $f->{name} setup noangl nodihe";
 	push(@watgen,$trec);
 	$self->{explicitWater}=1;
 	$self->{par}->{periodic}=1 unless (defined $self->{par}->{periodic});
-      } else {
+      } elsif (defined $self->{par}->{solvseg} && $self->{par}->{solvseg} ne "" && (":".$self->{par}->{solvseg}.":")=~/:$f->{name}:/) {
+	my $trec={};
+	$trec->{fname}=$fname;
+	$trec->{gen}="generate $f->{name} setup noangl nodihe";
+	push(@watgen,$trec);
+      } else { 
 	$self->_sendCommand("open unit 10 read form name \"$fname\"");
 	$self->_sendCommand("read sequ pdb unit 10");
         if ($hetero) {
@@ -1454,7 +1464,7 @@ sub setupFromMolecule {
     if (defined $c1 && defined $c2) {
       my $r1=$mol->getResidueInChain($ss->{resnum1},$c1);
       my $r2=$mol->getResidueInChain($ss->{resnum2},$c2);
-      if (defined $r1 && defined $r2) {
+      if (defined $r1 && defined $r2 && $r1->{name} eq "CYS" && $r2->{name} eq "CYS") {
 	my $pcmd=sprintf("patch DISU %s %d %s %d\n",$r1->{seg},$r1->{num},$r2->{seg},$r2->{num});
 	$self->_sendCommand($pcmd);
       }
@@ -1495,7 +1505,9 @@ sub setupFromMolecule {
     if (($self->{par}->{param} eq "19" || $self->{par}->{param} =~ /22/ ||
          $self->{par}->{param} eq "27" || $self->{par}->{param} eq "36" ||
          $self->{par}->{param} eq "eef1.36"  ||
-	 $self->{par}->{param} eq "eef1"  || $self->{par}->{param} eq "eef1.1" || $self->{par}->{param} eq "lpdb")) {
+	 $self->{par}->{param} eq "eef1"  || $self->{par}->{param} eq "eef1.1" || 
+         $self->{par}->{param} eq "lpdb" || 
+         $self->{par}->{hbuild})) {
       my $nic=$self->reportVariable("NIC");
       if ($nic>0) {
 	$self->_sendCommand("coor copy comp");
@@ -2723,15 +2735,22 @@ sub noeRestraints {
     }
     undef $inp;
   } elsif (defined $self->{par}->{xnoerest} && -r $self->{par}->{xnoerest}) {
+    my $r;
+    my $dmin;
+    my $dmax;
     my $inp=&GenUtil::getInputFile($self->{par}->{xnoerest});
     while(<$inp>) {
+      my $l=$_;
       s/\!.*$//;
-      if (/assi[a-z]* *\((.*)\) *\((.*)\) *([0-9\.]+) +([0-9\.]+) +([0-9\.]+)/) {
+      s/peak.*$//;
+      s/\s*ASSI\s*\{\s*[0-9]+\s*\}/assign/;
+      s/^\s*OR \{\s*[0-9]+\s*\}/or/;
+      if (/assi[a-z]*\s*\((.*)\)\s*\((.*)\)\s*([0-9\.]+)\s+([0-9\.]+)\s+([0-9\.]+)/) {
 	my $sel1=$1;
 	my $sel2=$2;
-	my $r=$3;
-	my $dmin=$4;
-	my $dmax=$5;
+	$r=$3;
+	$dmin=$4;
+	$dmax=$5;
 	
 	$sel1=~s/and/.and./g;
 	$sel1=~s/or/.or./g;
@@ -2749,7 +2768,27 @@ sub noeRestraints {
 		     $self->{par}->{noefmax},
                      ($self->{par}->{noemindist}?"MINDIST":""),
                      $r-$dmin,$r+$dmax,$sel1,$sel2));
-      } elsif (/assi[a-z]* *\((.*)\)\s*$/) {
+      } elsif (/^or *\((.*)\) *\((.*)\)/) {
+	my $sel1=$1;
+	my $sel2=$2;
+	
+	$sel1=~s/and/.and./g;
+	$sel1=~s/or/.or./g;
+	$sel1=~s/name/type/g;
+	$sel1=~s/\#/\*/g;
+
+	$sel2=~s/and/.and./g;
+	$sel2=~s/or/.or./g;
+	$sel2=~s/name/type/g;
+	$sel2=~s/\#/\*/g;
+
+	push(@{$noelist},
+	     sprintf("assign rexp %d kmin %f kmax %f fmax %f %s rmin %f rmax %f -\nselect %s end -\nselect %s end\n",
+		     $self->{par}->{noerexp},$self->{par}->{noekmin},$self->{par}->{noekmax},
+		     $self->{par}->{noefmax},
+                     ($self->{par}->{noemindist}?"MINDIST":""),
+                     $r-$dmin,$r+$dmax,$sel1,$sel2));
+      } elsif (/assi[a-z]*\s*\((.*)\)\s*$/) {
 	my $sel1=$1;
 	my $sel2="";
         $_=<$inp>;
@@ -2783,7 +2822,10 @@ sub noeRestraints {
 		     $self->{par}->{noefmax},
                      ($self->{par}->{noemindist}?"MINDIST":""),
                      $r-$dmin,$r+$dmax,$sel1,$sel2));
-        } 
+        }
+      } else {
+#        chomp $l;
+#        printf STDERR "skipping >%s<\n",$l;
       }
     }
   } else {
@@ -2792,9 +2834,9 @@ sub noeRestraints {
 
   $self->_sendCommand("bomlev -2");
   $self->_sendCommand("NOE\nRESET\nSCALE $self->{par}->{noescale}\nEND");
-  for (my $in=0; $in<=$#{$noelist}; $in+=20) {
+  for (my $in=0; $in<=$#{$noelist}; $in+=30) {
     my $cmd="";
-    for (my $j=$in; $j<=$#{$noelist} && $j<$in+20; $j++) {
+    for (my $j=$in; $j<=$#{$noelist} && $j<$in+30; $j++) {
       $cmd.=$noelist->[$j];
     }
 
@@ -2817,7 +2859,9 @@ sub getNOEAnalysis {
   my $flag=0;
   my $nset=();
   foreach my $l ( split(/\n/,$self->{_lastOutput}) ) {
-    if ($l=~/RESTRAINT: *([0-9]+) *([0-9]+) *([0-9]+)/) {
+    if ($l=~/Minimum distance restraint for the group of atom/) {
+    } elsif ($l=~/nearest pair found/) {
+    } elsif ($l=~/RESTRAINT: *([0-9]+) *([0-9]+) *([0-9]+)/) {
       $nrec={};
       $nrec->{inx}=$1;
       $nrec->{natom1}=$2;
@@ -4987,6 +5031,9 @@ sub getSASAOutput {
       $sasa->{energy}=$1*$self->{par}->{sasagamma}+$self->{par}->{sasadelta};
     }
   }
+
+  $self->_sendCommand("scalar wmain show");
+
   return $sasa;
 }
 
@@ -6388,6 +6435,9 @@ sub _processEneOutput {
       $erec->{elec}=substr($l,27,13);
       $erec->{asp}=substr($l,53,13);
       $erec->{user}=substr($l,66,13);
+    } elsif ($l=~/^(MINI|ENER|INTE) IMAGES>/) {
+      $erec->{vdwaals}+=substr($l,14,13);
+      $erec->{elec}+=substr($l,27,13);
     } elsif ($l=~/^(MINI|ENER|INTE) PBEQ>/) {
       $erec->{gb}=substr($l,40,13);
     } elsif ($l=~/^(MINI|ENER|INTE) CONSTR>/) {
